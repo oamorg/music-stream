@@ -1,0 +1,133 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: music-postgres
+    environment:
+      POSTGRES_DB: music
+      POSTGRES_USER: music
+      POSTGRES_PASSWORD: music
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U music -d music"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: music-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  minio:
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+    container_name: music-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://localhost:9000/minio/health/live >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      args:
+        APP_NAME: api
+    container_name: music-api
+    env_file:
+      - ../.env
+    environment:
+      DATABASE_URL: postgres://music:music@postgres:5432/music?sslmode=disable
+      REDIS_ADDR: redis:6379
+      MINIO_ENDPOINT: minio:9000
+      MEDIA_BASE_URL: http://localhost:8080/media
+      LOCAL_MEDIA_ROOT: /srv/media
+      FFMPEG_BINARY: ffmpeg
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_started
+    ports:
+      - "8080:8080"
+    volumes:
+      - media_data:/srv/media
+
+  worker:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      args:
+        APP_NAME: worker
+    container_name: music-worker
+    env_file:
+      - ../.env
+    environment:
+      DATABASE_URL: postgres://music:music@postgres:5432/music?sslmode=disable
+      REDIS_ADDR: redis:6379
+      MINIO_ENDPOINT: minio:9000
+      MEDIA_BASE_URL: http://localhost:8080/media
+      LOCAL_MEDIA_ROOT: /srv/media
+      FFMPEG_BINARY: ffmpeg
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_started
+    volumes:
+      - media_data:/srv/media
+
+  migrate:
+    profiles: ["tools"]
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      args:
+        APP_NAME: migrate
+    env_file:
+      - ../.env
+    environment:
+      DATABASE_URL: postgres://music:music@postgres:5432/music?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: ["up"]
+
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    container_name: music-prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+volumes:
+  postgres_data:
+  redis_data:
+  minio_data:
+  media_data:

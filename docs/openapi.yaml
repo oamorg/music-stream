@@ -1,0 +1,251 @@
+openapi: 3.0.3
+info:
+  title: Music Stream MVP API
+  version: 0.1.0
+  description: |
+    Executable MVP API for auth, catalog, playback, and listening history.
+servers:
+  - url: http://localhost:8080
+tags:
+  - name: Health
+  - name: Auth
+  - name: Catalog
+  - name: Playback
+  - name: History
+paths:
+  /health/live:
+    get:
+      tags: [Health]
+      summary: Liveness probe
+      responses:
+        "200":
+          description: Service is alive
+  /health/ready:
+    get:
+      tags: [Health]
+      summary: Readiness probe
+      responses:
+        "200":
+          description: Service is ready
+  /api/v1/auth/register:
+    post:
+      tags: [Auth]
+      summary: Register a user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterRequest"
+      responses:
+        "201":
+          description: User registered
+  /api/v1/auth/login:
+    post:
+      tags: [Auth]
+      summary: Log in with email and password
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: Tokens issued
+        "401":
+          description: Invalid credentials
+        "429":
+          description: Too many login attempts
+  /api/v1/auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Refresh access token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RefreshRequest"
+      responses:
+        "200":
+          description: Tokens refreshed
+  /api/v1/auth/logout:
+    post:
+      tags: [Auth]
+      summary: Revoke refresh token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LogoutRequest"
+      responses:
+        "204":
+          description: Logged out
+  /api/v1/tracks:
+    get:
+      tags: [Catalog]
+      summary: List ready tracks
+      parameters:
+        - in: query
+          name: limit
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Track list
+  /api/v1/tracks/{trackId}:
+    get:
+      tags: [Catalog]
+      summary: Get track detail
+      parameters:
+        - in: path
+          name: trackId
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Track detail
+        "404":
+          description: Track not found
+  /api/v1/search:
+    get:
+      tags: [Catalog]
+      summary: Search tracks
+      parameters:
+        - in: query
+          name: q
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: limit
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Search results
+  /api/v1/playback/sessions:
+    post:
+      tags: [Playback]
+      summary: Create a playback session
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatePlaybackSessionRequest"
+      responses:
+        "200":
+          description: Session created
+        "401":
+          description: Missing or invalid access token
+        "403":
+          description: User has no playback permission
+        "404":
+          description: Track not found
+        "409":
+          description: Track manifest is not ready
+  /api/v1/playback/events:
+    post:
+      tags: [Playback]
+      summary: Report playback event
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PlaybackEventRequest"
+      responses:
+        "202":
+          description: Event accepted
+        "400":
+          description: Invalid event payload
+        "401":
+          description: Missing or invalid access token
+        "403":
+          description: Session does not belong to current user
+        "429":
+          description: Too many playback events
+  /api/v1/me/history:
+    get:
+      tags: [History]
+      summary: Get current user's listening history
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: limit
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: History returned
+        "401":
+          description: Missing or invalid access token
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    RegisterRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 8
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+    RefreshRequest:
+      type: object
+      required: [refreshToken]
+      properties:
+        refreshToken:
+          type: string
+    LogoutRequest:
+      type: object
+      required: [refreshToken]
+      properties:
+        refreshToken:
+          type: string
+    CreatePlaybackSessionRequest:
+      type: object
+      required: [trackId]
+      properties:
+        trackId:
+          type: integer
+          format: int64
+    PlaybackEventRequest:
+      type: object
+      required: [sessionId, eventType, positionSec, clientTimestamp]
+      properties:
+        sessionId:
+          type: integer
+          format: int64
+        eventType:
+          type: string
+          enum: [START, HEARTBEAT, COMPLETE]
+        positionSec:
+          type: integer
+        clientTimestamp:
+          type: string
+          format: date-time
