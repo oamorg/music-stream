@@ -1,0 +1,17 @@
+.DS_Store
+.env
+.idea/
+.vscode/
+bin/
+dist/
+tmp/
+.tmp/
+coverage.out
+*.log
+
+# Local volumes
+.data/
+.tooling/
+
+# Go
+*.test
